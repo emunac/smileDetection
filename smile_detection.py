@@ -11,6 +11,8 @@ import torch.nn.functional as F
 import torch.optim as optim
 from tqdm import tqdm
 
+torch.manual_seed(2)
+
 
 class Net(nn.Module):
     def __init__(self):
@@ -85,13 +87,25 @@ print("Numbers of images in dataset:", len(dataset))
 print("One example from dataset:", dataset[0])
 
 train_size = int(0.8 * len(dataset))
+train_batch_size = 128
 val_size = len(dataset) - train_size
 train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
 
-train_loader = DataLoader(dataset=train_dataset, batch_size=128)
+train_labels = []
+class_counts = [0] * 2 #number of labels
+for idx in train_dataset.indices:
+    _, label = dataset[idx]
+    class_counts[label] += 1
+    train_labels.append(label)
+
+class_weights = [train_size/class_counts[i] for i in range(len(class_counts))]
+weights = [class_weights[train_labels[i]] for i in range(int(train_size))]
+sampler = torch.utils.data.WeightedRandomSampler(torch.DoubleTensor(weights), train_batch_size)
+
+train_loader = DataLoader(dataset=train_dataset, batch_size=train_batch_size, sampler=sampler)
 val_loader = DataLoader(dataset=val_dataset, batch_size=20)
 
-n_epochs = 100
+n_epochs = 1000
 lr = 0.01
 model = Net()
 optimizer = optim.Adam(model.parameters(), lr=lr)
