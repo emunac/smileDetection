@@ -109,7 +109,10 @@ n_epochs = 1000
 lr = 0.01
 model = Net()
 optimizer = optim.Adam(model.parameters(), lr=lr)
+PATH = "state_dict_model.pt"
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+model.to(device)
 
 for epoch in range(n_epochs):
     model.train()
@@ -127,3 +130,4 @@ for epoch in range(n_epochs):
     print(epoch + 1, "lr =", lr, "loss_train:", torch.stack(losses).mean(),
           "accuracy:", accuracy)
 
+torch.save(model.state_dict(), PATH)
