@@ -39,21 +39,17 @@ class FaceDataset(Dataset):
         self.img_paths = []
         self.img_labels = []
 
-        #init positives examples
         positive_path = os.path.join(img_dir, "positives/positives7")
-        for file in os.listdir(positive_path):
-            if file.endswith(".jpg"):
-                image_path = os.path.join(positive_path, file)
-                self.img_paths.append(image_path)
-                self.img_labels.append(1)
-
-        #init negatives examples
         negative_path = os.path.join(img_dir, "negatives/negatives7")
-        for file in os.listdir(negative_path):
-            if file.endswith(".jpg"):
-                image_path = os.path.join(negative_path, file)
-                self.img_paths.append(image_path)
-                self.img_labels.append(0)
+        for path in [positive_path, negative_path]:
+            for file in os.listdir(path):
+                if file.endswith(".jpg"):
+                    image_path = os.path.join(path, file)
+                    self.img_paths.append(image_path)
+                    if path is positive_path:
+                        self.img_labels.append(1)
+                    else:
+                        self.img_labels.append(0)
 
     def __len__(self):
         return len(self.img_labels)
@@ -65,7 +61,7 @@ class FaceDataset(Dataset):
         return image_tensor, self.img_labels[idx]
 
 
-def testAccuracy():
+def test_accuracy():
 
     model.eval()
     accuracy = 0.0
@@ -87,10 +83,11 @@ print("Numbers of images in dataset:", len(dataset))
 print("One example from dataset:", dataset[0])
 
 train_size = int(0.8 * len(dataset))
-train_batch_size = 128
+train_batch_size = 64
 val_size = len(dataset) - train_size
 train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
 
+#generate sampler
 train_labels = []
 class_counts = [0] * 2 #number of labels
 for idx in train_dataset.indices:
@@ -106,7 +103,7 @@ train_loader = DataLoader(dataset=train_dataset, batch_size=train_batch_size, sa
 val_loader = DataLoader(dataset=val_dataset, batch_size=20)
 
 n_epochs = 1000
-lr = 0.01
+lr = 0.0001
 model = Net()
 optimizer = optim.Adam(model.parameters(), lr=lr)
 PATH = "state_dict_model.pt"
@@ -125,7 +122,7 @@ for epoch in range(n_epochs):
         optimizer.step()
         optimizer.zero_grad()
 
-    accuracy = testAccuracy()
+    accuracy = test_accuracy()
 
     print(epoch + 1, "lr =", lr, "loss_train:", torch.stack(losses).mean(),
           "accuracy:", accuracy)
