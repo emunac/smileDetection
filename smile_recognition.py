@@ -11,6 +11,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 from tqdm import tqdm
 from sklearn.metrics import confusion_matrix
+from smile_net import Net
 
 torch.manual_seed(2)
 
@@ -19,30 +20,13 @@ torch.manual_seed(2)
 #   plt.imshow(grid.permute(1, 2, 0))
 #   plt.show()
 
-class Net(nn.Module):
-  def __init__(self):
-    super(Net, self).__init__()
-    self.conv1 = nn.Conv2d(1, 10, kernel_size=5)
-    self.conv2 = nn.Conv2d(10, 20, kernel_size=5)
-    self.conv2_drop = nn.Dropout2d()
-    self.fc1 = nn.Linear(3380, 50)
-    self.fc2 = nn.Linear(50, 2)
-
-  def forward(self, x):
-    x = F.relu(F.max_pool2d(self.conv1(x), 2))
-    x = F.relu(F.max_pool2d(self.conv2_drop(self.conv2(x)), 2))
-    x = x.view(-1, 3380)
-    x = F.relu(self.fc1(x))
-    x = F.dropout(x, training=self.training)
-    x = self.fc2(x)
-    return F.log_softmax(x, dim=1)
-
 
 class FaceDataset(Dataset):
-  def __init__(self, img_dir):
+  def __init__(self, img_dir, transform=None):
     self.img_dir = img_dir
     self.img_paths = []
     self.img_labels = []
+    self.transform = transform
 
     positive_path = os.path.join(img_dir, "positives/positives7")
     negative_path = os.path.join(img_dir, "negatives/negatives7")
@@ -62,16 +46,50 @@ class FaceDataset(Dataset):
   def __getitem__(self, idx):
     convert_tensor = transforms.ToTensor()
     image = Image.open(self.img_paths[idx])
-    image_tensor = convert_tensor(image)
-    return image_tensor, self.img_labels[idx]
+    image = convert_tensor(image)
+    if self.transform:
+      image = self.transform(image)
+
+    return image, self.img_labels[idx]
+
+
+def generate_sampler(dataset, indices):
+  train_labels = []  # list of labels of any example in train set
+  class_counts = [0] * 2
+  num_samples = len(indices)
+  for idx in indices:
+    _, label = dataset[idx]
+    class_counts[label] += 1
+    train_labels.append(label)
+
+  class_weights = [num_samples / class_counts[i] for i in range(len(class_counts))]
+  # give a weight for any example in the train set
+  weights = [class_weights[train_labels[i]] for i in range(num_samples)]
+  sampler = torch.utils.data.WeightedRandomSampler(torch.DoubleTensor(weights), num_samples=num_samples)
+  return sampler
+
+def wrap_confusion_matrix(y_true, y_pred):
+  matrix = [] #tn, fp, fn, tp
+  matrix = confusion_matrix(y_true=y_true, y_pred=y_pred).ravel()
+
+  #expected
+  if len(matrix) == 4:
+    return matrix
+
+  #else len = 1 which means that y_true=y_pred
+  elif y_true[0] == 0:
+    return [4, 0, 0, 0]
+  else:
+    return [0, 0, 0, 4]
 
 
 def test_validation():
-
   model.eval()
   total = 0
   accuracy = 0.0
   true_positive = 0
+  true_negative = 0
+  false_positive = 0
   false_negative = 0
 
   with torch.no_grad():
@@ -83,17 +101,26 @@ def test_validation():
       total += labels.size(0)
       accuracy += (predicted == labels).sum().item()
 
-      tn, fp, fn, tp = confusion_matrix(labels, predicted).ravel()
+      tn, fp, fn, tp = wrap_confusion_matrix(labels, predicted)
       true_positive += tp
+      true_negative += tn
+      false_positive += fp
       false_negative += fn
 
   accuracy = (100 * accuracy / total)
   sensitivity = true_positive/(true_positive + false_negative)
-  return accuracy, sensitivity
+  specificity = true_negative/(true_negative + false_positive)
+  return accuracy, sensitivity, specificity
 
 
 img_dir = "../SMILEsmileD/SMILEs"
-dataset = FaceDataset(img_dir)
+
+transform = transforms.Compose([
+  transforms.RandomRotation(10),
+  transforms.ColorJitter(brightness=0.2)
+])
+
+dataset = FaceDataset(img_dir, transform=transform)
 print("Numbers of images in dataset:", len(dataset))
 print("One example from dataset:", dataset[0])
 plt.imshow(dataset[0][0].permute(1, 2, 0))
@@ -104,18 +131,7 @@ train_batch_size = 128
 val_size = len(dataset) - train_size
 train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
 
-#generate sampler
-train_labels = [] #list of labels of any axample in train set
-class_counts = [0] * 2
-for idx in train_dataset.indices:
-  _, label = dataset[idx]
-  class_counts[label] += 1
-  train_labels.append(label)
-
-class_weights = [train_size/class_counts[i] for i in range(len(class_counts))]
-#give a weight for any example in the train set
-weights = [class_weights[train_labels[i]] for i in range(int(train_size))]
-sampler = torch.utils.data.WeightedRandomSampler(torch.DoubleTensor(weights), train_size)
+sampler = generate_sampler(dataset, train_dataset.indices)
 
 train_loader = DataLoader(dataset=train_dataset, batch_size=train_batch_size, sampler=sampler)
 val_loader = DataLoader(dataset=val_dataset, batch_size=20)
@@ -144,11 +160,11 @@ for epoch in range(n_epochs):
     optimizer.step()
     optimizer.zero_grad()
 
-  accuracy, sensitivity = test_validation()
+  accuracy, sensitivity, specificity = test_validation()
   if accuracy > max_accuracy:
     max_accuracy = accuracy
     torch.save(model.state_dict(), PATH)
 
   print(epoch + 1, "lr =", lr, "loss_train:", torch.stack(losses).mean(),
-        "accuracy:", accuracy, "sensitivity:", sensitivity)
+        "accuracy:", accuracy, "sensitivity:", sensitivity, "specificity:", specificity)
 
