@@ -15,7 +15,43 @@ import platform
 import pandas as pd
 from smile_net import Net
 
-mtcnn = MTCNN(image_size=64, margin=0, post_process=False)
+
+class Face:
+    # center is numpy array, to present the center point [x,y]
+    def __init__(self, center, pred):
+        self.current_center = center
+        self.predictions = []
+        self.predictions.append(pred)
+
+
+def assign(faces, boxes, predictions):
+    max_assign_distance = 50
+    if len(boxes) != len(predictions):
+        print("error, faces and predictions should have same length")
+        return faces
+
+    for box, prediction in zip(boxes, predictions):
+        center = np.array([(box[0] + box[2])/2, (box[1] + box[3])/2])
+
+        min_distance = max_assign_distance
+        closest_face = None
+        for face in faces:
+            distance = np.linalg.norm(face.current_center - center)
+            if distance < min_distance:
+                min_distance = distance
+                closest_face = face
+        if closest_face:
+            closest_face.current_center = center
+            closest_face.predictions.append(prediction)
+        else:
+            face = Face(center, prediction)
+            faces.append(face)
+
+    return faces
+
+image_size = 64
+
+mtcnn = MTCNN(image_size=image_size, margin=0, post_process=False)
 
 root = Tk()
 dir_path = '/home/emuna/PycharmProjects/SheCodes/examples/'
@@ -38,8 +74,8 @@ smile_reco = Net()
 smile_reco.load_state_dict(torch.load('state_dict_model.pt'))
 smile_reco.eval()
 
-transform = transforms.Grayscale()
-predictions = []
+transform = transforms.Compose([transforms.ToTensor(), transforms.Grayscale()])
+faces = []
 missed = []
 # Loop through video
 for i in tqdm(range(v_len)):
@@ -51,20 +87,27 @@ for i in tqdm(range(v_len)):
 
     frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     frame = Image.fromarray(frame)
-    face = mtcnn(frame)
-    face = transform(face)
-
-    output = smile_reco(face[None, ...])
-    _, predicted = torch.max(output.data, 1)
-    predictions.append(predicted.item())
+    # face = mtcnn(frame)
+    # face = transform(face)
+    #
+    # output = smile_reco(face[None, ...])
+    # _, predicted = torch.max(output.data, 1)
+    # predictions.append(predicted.item())
 
     frame_predictions = []
     boxes, probs = mtcnn.detect(frame, landmarks=False)
     draw = ImageDraw.Draw(frame)
-    color = 'green' if predicted else "red"
     for box in boxes:
+        face = frame.crop(box).resize((image_size, image_size), Image.BILINEAR)
+        face = transform(face)
+        output = smile_reco(face[None, ...])
+        _, predicted = torch.max(output.data, 1)
+        frame_predictions.append(predicted)
+
+        color = 'green' if predicted else "red"
         draw.rectangle(box.tolist(), outline=color, width=6)
 
+    faces = assign(faces, boxes, frame_predictions)
     out.write(cv2.cvtColor(np.array(frame), cv2.COLOR_RGB2BGR))
 
 # When everything done, release the video capture and video write objects
