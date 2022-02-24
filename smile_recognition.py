@@ -1,12 +1,10 @@
 import torch
 from torch.utils.data import Dataset, DataLoader
 from torch.utils.data.dataset import random_split
-from torchvision.utils import make_grid
 import os
 from torchvision import transforms
 from PIL import Image
 from matplotlib import pyplot as plt
-import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from tqdm import tqdm
@@ -14,11 +12,6 @@ from sklearn.metrics import confusion_matrix
 from smile_net import Net
 
 torch.manual_seed(2)
-
-# def show(imgs):
-#   grid = make_grid(imgs, nrow=5)
-#   plt.imshow(grid.permute(1, 2, 0))
-#   plt.show()
 
 
 class FaceDataset(Dataset):
@@ -149,9 +142,6 @@ PATH = "state_dict_model_sensitivity.pt"
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model.to(device)
-
-model.load_state_dict(torch.load(PATH, map_location=device))
-test_validation()
 
 for epoch in range(n_epochs):
     model.train()

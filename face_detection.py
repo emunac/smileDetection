@@ -59,17 +59,11 @@ def assign(face_objects_list: list, boxes, predictions, idx, v_len) -> list:
 def correct(face_objects_list: list):
     min_frame_appearance = 10
     window_size = 10
-    sensitivity = 0
     for face in face_objects_list:
         count_frame_appearance = sum(x is not None for x in face.predictions_in_frames)
         if count_frame_appearance < min_frame_appearance:
             face_objects_list.remove(face)
             continue
-
-        for i, x in enumerate(face.predictions_in_frames):
-            stri = str(x.item()) if x is not None else ''
-            print('frame #', i, 'frame detect:', stri)
-            # print(x.item(), i)
 
         corrected_predictions: list = face.predictions_in_frames
         half_window_size = int(window_size/2)
@@ -79,7 +73,7 @@ def correct(face_objects_list: list):
                 continue
 
             majority = sum(face.predictions_in_frames[i - half_window_size: i + 1 + half_window_size])
-            if majority < half_window_size - sensitivity:
+            if majority < half_window_size:
                 corrected_predictions[i] = 0
             else:
                 corrected_predictions[i] = 1
@@ -165,20 +159,6 @@ for i in tqdm(range(v_len)):
 # When everything done, release the video capture and video write objects
 v_cap.release()
 out.release()
-
-
-# test smiling accuracy
-# df = pd.read_csv('labels.csv')
-# if filename in df.file_name.values:
-#     labels_loc = df.loc[df.file_name == filename, 'face_1'].apply(eval).values[0]
-#     truth = np.zeros(labels_loc[-1])
-#     for i in range(0, len(labels_loc) - 1, 2):
-#         truth[labels_loc[i]+1 : labels_loc[i+1]] = [1] * (labels_loc[i+1] - labels_loc[i] - 1)
-#
-#     face_object: FaceObject = face_objects_list[0]
-#     accuracy = (truth == np.array(face_object.predictions_in_frames)).sum()
-#     accuracy = 100 * accuracy / v_len
-#     print('accuracy = {}'.format(accuracy))
 
 # open detected video
 if platform.system() == 'Darwin':       # macOS
