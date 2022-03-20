@@ -55,7 +55,7 @@ def generate_sampler(dataset, indices):
         class_counts[label] += 1
         train_labels.append(label)
 
-    class_weights = [num_samples / class_counts[i] for i in range(len(class_counts))]
+    class_weights = [num_samples / class_count for class_count in class_counts]
     # give a weight for any example in the train set
     weights = [class_weights[train_labels[i]] for i in range(num_samples)]
     sampler = torch.utils.data.WeightedRandomSampler(torch.DoubleTensor(weights), num_samples=num_samples)
@@ -71,10 +71,10 @@ def wrap_confusion_matrix(y_true, y_pred):
         return matrix
 
     # else len = 1 which means that y_true = y_pred
-    elif y_true[0] == 0:
+    if y_true[0] == 0:
         return [4, 0, 0, 0]
-    else:
-        return [0, 0, 0, 4]
+
+    return [0, 0, 0, 4]
 
 
 def test_validation():
@@ -143,6 +143,7 @@ PATH = "state_dict_model_sensitivity.pt"
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model.to(device)
 
+# Check best practices
 for epoch in range(n_epochs):
     model.train()
     losses = []
