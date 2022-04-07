@@ -5,36 +5,41 @@ from facenet_pytorch import MTCNN
 from pathlib import Path
 from datetime import datetime
 import cv2
-from smile_net import Net
+from smile_net import Net as SmileRecognizerNet
 import consts
 from torchvision import transforms
 from tqdm import tqdm
 from PIL import Image
-from face_object import FaceObject, assign, correct
+from face_object import FaceManager, FaceObject
 import subprocess
 
 
-def detect_video(file_path):
-
+def create_new_filepath(file_path):
     filename = Path(file_path).stem
+    dir_path = Path(file_path).parent
     current_time = datetime.now().strftime("%d-%m-%Y %H:%M")
-    new_filepath = f'{dir_path}{filename}_{current_time}_detected.mp4'
+    new_filepath = f'{dir_path}/{filename}_{current_time}_detected.mp4'
+    return new_filepath
 
-    v_cap = cv2.VideoCapture(filepath)
-    v_len = int(v_cap.get(cv2.CAP_PROP_FRAME_COUNT))
+
+def save_faces_and_smiling_predictions(file_path):
+    video_capture = cv2.VideoCapture(file_path)
+    video_length = int(video_capture.get(cv2.CAP_PROP_FRAME_COUNT))
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    smile_reco = Net()
-    smile_reco.load_state_dict(
+    smile_recognizer_net = SmileRecognizerNet()
+    smile_recognizer_net.load_state_dict(
         torch.load(consts.SMILE_MODEL_PATH, map_location=device))
-    smile_reco.eval()
+    smile_recognizer_net.eval()
 
-    transform = transforms.Compose([transforms.ToTensor(), transforms.Grayscale()])
-    face_objects_list = []
+    image_transforms = transforms.Compose(
+        [transforms.ToTensor(),
+         transforms.Grayscale()])
 
-    for i in tqdm(range(v_len)):
+    face_manager = FaceManager(video_length)
+    for i in tqdm(range(video_length)):
         # Load frame
-        success, frame = v_cap.read()
+        success, frame = video_capture.read()
         if not success:
             continue
 
@@ -49,29 +54,36 @@ def detect_video(file_path):
         for box in boxes:
             face_image = frame.crop(box).resize(
                 (consts.IMAGE_SIZE, consts.IMAGE_SIZE), Image.BILINEAR)
-            face_image = transform(face_image)
+            face_image = image_transforms(face_image)
             frame_faces.append(face_image)
 
-        output = smile_reco(torch.stack(frame_faces))
+        output = smile_recognizer_net(torch.stack(frame_faces))
         _, frame_predictions = torch.max(output.data, 1)
-        face_objects_list = assign(face_objects_list, boxes, frame_predictions, i, v_len)
+        face_manager.assign_faces_in_frame(boxes, frame_predictions, i)
 
-    correct(face_objects_list)
+    video_capture.release()
+    face_manager.drop_mistaken_detected_faces()
+    face_manager.correct_smiling_predictions()
+    return face_manager
 
-    v_cap = cv2.VideoCapture(filepath)
-    frame_width = int(v_cap.get(3))
-    frame_height = int(v_cap.get(4))
+
+def draw_on_video(file_path, face_manager):
+
+    video_capture = cv2.VideoCapture(filepath)
+    new_filepath = create_new_filepath(file_path)
+    video_length = int(video_capture.get(cv2.CAP_PROP_FRAME_COUNT))
+    frame_width = int(video_capture.get(3))
+    frame_height = int(video_capture.get(4))
     out = cv2.VideoWriter(new_filepath, cv2.VideoWriter_fourcc(*'mp4v'),
                           consts.FRAMES_PER_SECOND, (frame_width, frame_height))
 
-    # Loop through video for drawing
-    for i in tqdm(range(v_len)):
+    for i in tqdm(range(video_length)):
         # Load frame
-        success, frame = v_cap.read()
+        success, frame = video_capture.read()
         if not success:
             continue
 
-        for face in face_objects_list:
+        for face in face_manager.face_objects:
             face: FaceObject
             prediction = face.predictions_in_frames[i]
             coordinates = face.coordinates_in_frames[i]
@@ -83,12 +95,9 @@ def detect_video(file_path):
 
         out.write(frame)
 
-    # When everything done, release the video capture and video write objects
-    v_cap.release()
+    video_capture.release()
     out.release()
-
-    # open detected video linux variants
-    subprocess.call(('xdg-open', new_filepath))
+    return new_filepath
 
 
 if __name__ == '__main__':
@@ -97,4 +106,8 @@ if __name__ == '__main__':
     root = Tk()
     filepath = filedialog.askopenfilename(initialdir=dir_path, title="Select file",
                                           filetypes=(("video files", "*.mp4"), ("all files", "*.*")))
-    detect_video(filepath)
+    face_manager = save_faces_and_smiling_predictions(filepath)
+    new_file_path = draw_on_video(filepath, face_manager)
+
+    # open detected video linux variants
+    subprocess.call(('xdg-open', new_file_path))
