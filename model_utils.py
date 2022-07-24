@@ -1,6 +1,7 @@
 import torch
 from torch.utils.data import WeightedRandomSampler
 from sklearn.metrics import confusion_matrix
+from tqdm import tqdm
 
 
 def generate_sampler(dataset, indices, num_of_labels):
@@ -19,11 +20,20 @@ def generate_sampler(dataset, indices, num_of_labels):
     return sampler
 
 
-def test_model(model, loader):
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model.to(device)
-    model.eval()
+def train_epoch(model, device, dataloader, loss_fn, optimizer):
 
+    model.train()
+    for images, labels in tqdm(dataloader):
+        images, labels = images.to(device), labels.to(device)
+        output = model(images)
+
+        loss = loss_fn(output, labels)
+        loss.backward()
+        optimizer.step()
+        optimizer.zero_grad()
+
+
+def test_model(model, device, dataloader):
     total = 0
     accuracy = 0.0
     true_positive = 0
@@ -31,8 +41,10 @@ def test_model(model, loader):
     false_positive = 0
     false_negative = 0
 
+    model.eval()
+
     with torch.no_grad():
-        for images, labels in loader:
+        for images, labels in dataloader:
             images = images.to(device)
             labels = labels.to(device)
             outputs = model(images)

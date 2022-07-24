@@ -1,13 +1,10 @@
 import torch
 from torch.utils.data import DataLoader
-from torch.utils.data.dataset import random_split, Subset
+from torch.utils.data.dataset import Subset
 import os
-import torchvision
 from torchvision import transforms
-from matplotlib import pyplot as plt
 from torch import nn
 import torch.optim as optim
-from tqdm import tqdm
 from smile_net import Net
 from smile_dataset import SmileDataset
 from torch.utils.tensorboard import SummaryWriter
@@ -75,17 +72,9 @@ for fold, (train_ids, test_ids) in enumerate(kfold.split(dataset)):
     model.to(device)
 
     for epoch in range(n_epochs):
-        model.train()
-        for images, labels in tqdm(train_loader):
-            images, labels = images.to(device), labels.to(device)
-            output = model(images)
 
-            loss = loss_function(output, labels)
-            loss.backward()
-            optimizer.step()
-            optimizer.zero_grad()
-
-        accuracy, sensitivity, specificity = model_utils.test_model(model, test_loader)
+        model_utils.train_epoch(model, device, train_loader, loss_function, optimizer)
+        accuracy, sensitivity, specificity = model_utils.test_model(model, device, test_loader)
 
         if sensitivity > max_sensitivity:
             max_sensitivity = sensitivity
