@@ -2,6 +2,10 @@ import torch
 from torch.utils.data import WeightedRandomSampler
 from sklearn.metrics import confusion_matrix
 from tqdm import tqdm
+import torch.nn.functional as F
+from sklearn.metrics import roc_curve
+from matplotlib import pyplot
+import numpy as np
 
 
 def generate_sampler(dataset, indices, num_of_labels):
@@ -48,6 +52,7 @@ def test_model(model, device, dataloader):
             images = images.to(device)
             labels = labels.to(device)
             outputs = model(images)
+            probabilities = F.softmax(outputs, dim=1)[:, 1]
             _, predicted = torch.max(outputs.data, 1)
             total += labels.size(0)
             accuracy += (predicted == labels).sum().item()
@@ -62,3 +67,32 @@ def test_model(model, device, dataloader):
     sensitivity = true_positive/(true_positive + false_negative)
     specificity = true_negative/(true_negative + false_positive)
     return accuracy, sensitivity, specificity
+
+
+def dataloader_roc(model, device, dataloader, titel):
+    model.eval()
+    y_true = []
+    y_score = []
+
+    with torch.no_grad():
+        for images, labels in dataloader:
+            images = images.to(device)
+            labels = labels.to(device)
+
+            y_true = np.append(y_true, labels.detach().numpy())
+            outputs = model(images)
+            probabilities = F.softmax(outputs, dim=1)[:, 1]
+            y_score = np.append(y_score, probabilities.detach().numpy())
+
+    fpr, tpr, _ = roc_curve(y_true, y_score)
+    pyplot.plot(fpr, tpr, marker='.')
+
+    pyplot.xlabel('False Positive Rate')
+    pyplot.ylabel('True Positive Rate')
+
+    pyplot.savefig(f'roc_curves/{titel}.jpg')
+    pyplot.show()
+    pyplot.close()
+
+
+

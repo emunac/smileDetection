@@ -13,7 +13,7 @@ import model_utils
 
 torch.manual_seed(2)
 
-PATH = '/models/'
+PATH = 'state_dict_models/'
 img_dir = '../SMILEsmileD/SMILEs'
 positive_path = os.path.join(img_dir, 'positives/positives7')
 negative_path = os.path.join(img_dir, 'negatives/negatives7')
@@ -44,8 +44,6 @@ train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
 
 sampler = model_utils.generate_sampler(dataset, train_dataset.indices, 2)
 
-train_loader = DataLoader(dataset=train_dataset, batch_size=train_batch_size, sampler=sampler)
-val_loader = DataLoader(dataset=val_dataset, batch_size=20)
 
 for ixd, (lr, train_batch_size) in enumerate(product(*param_values)):
 
@@ -55,11 +53,15 @@ for ixd, (lr, train_batch_size) in enumerate(product(*param_values)):
     model = Net()
     optimizer = optim.Adam(model.parameters(), lr=lr)
 
+    train_loader = DataLoader(dataset=train_dataset, batch_size=train_batch_size, sampler=sampler)
+    val_loader = DataLoader(dataset=val_dataset, batch_size=20)
+
     comment = f' batch_size = {train_batch_size} lr = {lr}'
     tb = SummaryWriter(comment=comment)
 
     max_accuracy = 0
     max_sensitivity = 0
+    epochs_max_sens = []
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model.to(device)
@@ -74,13 +76,20 @@ for ixd, (lr, train_batch_size) in enumerate(product(*param_values)):
 
         if sensitivity > max_sensitivity:
             max_sensitivity = sensitivity
-            # torch.save(model.state_dict(), f'{PATH}_sensitivity_{epoch}')
+            epochs_max_sens.append(epoch)
+            torch.save(model.state_dict(), f'{PATH}sensitivity_lr={lr}_b_size={train_batch_size}.pt')
 
         if accuracy > max_accuracy:
             max_accuracy = accuracy
 
         print(
             f' epoch {epoch + 1}, accuracy={accuracy:.2f}, sensitivity={sensitivity:.2}, specificity={specificity:.2f}')
+
+    print(f'sensitivity get max at steps: {epochs_max_sens}')
+    # plot roc curve at max sensitivity model
+    print(f'roc_curve for lr={lr}, b_size={train_batch_size}:')
+    model.load_state_dict(torch.load(f'{PATH}sensitivity_lr={lr}_b_size={train_batch_size}.pt'))
+    model_utils.dataloader_roc(model, device, val_loader, titel=f'lr={lr}_b_size={train_batch_size}')
 
     tb.add_hparams(
         {'lr': lr, 'bsize': train_batch_size},
